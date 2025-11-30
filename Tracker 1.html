@@ -1,0 +1,669 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MindFlow — Attractive Redesign</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              200: '#c7d2fe',
+              300: '#a5b4fc',
+              400: '#818cf8',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+              800: '#3730a3',
+              900: '#312e81'
+            }
+          },
+          boxShadow: {
+            soft: '0 8px 24px rgba(0,0,0,0.08)',
+            glass: '0 10px 30px rgba(0,0,0,0.14)'
+          },
+          keyframes: {
+            floaty: { '0%,100%': { transform: 'translateY(0px)' }, '50%': { transform:'translateY(-6px)' } },
+            fadeUp: { '0%': {opacity:.0, transform:'translateY(8px)'}, '100%': {opacity:1, transform:'translateY(0)'} }
+          },
+          animation: {
+            floaty: 'floaty 6s ease-in-out infinite',
+            fadeUp: 'fadeUp .35s ease-out both'
+          },
+          borderRadius: { xl2: '1.125rem', blob: '28px' }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Aurora background */
+    body { background: radial-gradient(1200px 600px at 10% -10%, rgba(99,102,241,.25), transparent 60%), radial-gradient(900px 500px at 100% 0%, rgba(139,92,246,.22), transparent 55%), linear-gradient(180deg, #fbfbfe, #f6f7fb); }
+    .dark body, .dark { background: radial-gradient(1200px 600px at 10% -10%, rgba(99,102,241,.18), transparent 60%), radial-gradient(900px 500px at 100% 0%, rgba(139,92,246,.16), transparent 55%), linear-gradient(180deg, #0a0a0b, #0d0e12); }
+    .glass { backdrop-filter: blur(10px); }
+  </style>
+</head>
+<body class="min-h-screen text-zinc-900 antialiased transition-colors dark:text-zinc-50">
+  <!-- Decorative orbs -->
+  <div class="pointer-events-none fixed inset-0 -z-10">
+    <div class="absolute left-10 top-14 h-40 w-40 rounded-full bg-brand-500/20 blur-2xl animate-floaty"></div>
+    <div class="absolute right-12 top-24 h-32 w-32 rounded-full bg-violet-500/20 blur-2xl animate-floaty" style="animation-delay:.8s"></div>
+  </div>
+
+  <div id="root"></div>
+
+  <!-- React + Babel -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <script type="text/babel">
+    const { useEffect, useMemo, useState } = React;
+
+    // ===== Utilities =====
+    const cx = (...xs) => xs.filter(Boolean).join(' ');
+    const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
+
+    function useLocalStorage(key, initial) {
+      const [value, setValue] = useState(() => {
+        try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : initial; } catch { return initial; }
+      });
+      useEffect(()=>{ try { localStorage.setItem(key, JSON.stringify(value)); } catch {} }, [key, value]);
+      return [value, setValue];
+    }
+
+    const Card = ({ className = '', children }) => (
+      <div className={cx('glass rounded-xl2 border border-white/40 bg-white/60 p-5 shadow-glass dark:border-white/10 dark:bg-white/5', 'animate-fadeUp', className)}>
+        {children}
+      </div>
+    );
+
+    const Button = ({ variant='primary', className='', ...props }) => {
+      const base = 'rounded-xl px-4 py-2 text-sm font-semibold transition active:scale-[.98]';
+      const styles = {
+        primary: 'bg-gradient-to-br from-brand-500 to-violet-500 text-white shadow-soft hover:brightness-110',
+        ghost: 'border border-white/40 bg-white/50 text-zinc-700 hover:bg-white dark:border-white/10 dark:bg-white/5 dark:text-zinc-200 dark:hover:bg-white/10',
+        danger: 'bg-red-500 text-white hover:brightness-110'
+      };
+      return <button {...props} className={cx(base, styles[variant], className)} />
+    };
+
+    // ===== Theme Toggle =====
+    function DarkModeToggle(){
+      const [enabled, setEnabled] = useLocalStorage('mf:dark', true);
+      useEffect(()=>{ const root = document.documentElement; enabled ? root.classList.add('dark') : root.classList.remove('dark'); },[enabled]);
+      return (
+        <Button variant="ghost" onClick={()=>setEnabled(v=>!v)} className="text-xs">{enabled ? '🌙 Dark' : '☀️ Light'}</Button>
+      );
+    }
+
+    // ===== Countdown & Progress =====
+    const parts = ms => { const s = Math.floor(Math.abs(ms)/1000); return { d: Math.floor(s/86400), h: Math.floor(s%86400/3600), m: Math.floor(s%3600/60), s: s%60 }; };
+    function BadgeDeadline({ due }){
+      const [now, setNow] = useState(Date.now());
+      useEffect(()=>{ const id=setInterval(()=>setNow(Date.now()), 1000); return ()=>clearInterval(id); },[]);
+      const remaining = new Date(due).getTime() - now;
+      const over = remaining < 0; const t = parts(remaining);
+      const soon = !over && remaining < 36e5 * 6; // under 6h
+      return (
+        <span className={cx('rounded-full px-2 py-0.5 text-[11px] tabular-nums', over ? 'bg-red-500/15 text-red-600 dark:text-red-300' : soon ? 'bg-amber-500/15 text-amber-700 dark:text-amber-200' : 'bg-brand-500/15 text-brand-700 dark:text-brand-200')} title={new Date(due).toLocaleString()}>
+          {over ? 'Overdue by ' : 'Due in '} {t.d}d {t.h}h {t.m}m {t.s}s
+        </span>
+      );
+    }
+
+    function Progress({ value, max=100 }){
+      const pct = Math.round(clamp((value/max)*100, 0, 100));
+      const color = pct===100 ? 'from-green-500 to-emerald-500' : pct>70 ? 'from-brand-500 to-violet-500' : pct>35 ? 'from-amber-500 to-orange-500' : 'from-zinc-400 to-zinc-500';
+      return (
+        <div className="h-2 w-full rounded-full bg-zinc-200/70 dark:bg-zinc-800">
+          <div className={cx('h-2 rounded-full bg-gradient-to-r transition-all', color)} style={{width: pct+'%'}} />
+        </div>
+      );
+    }
+
+    // ===== Tracker =====
+    function datetimeLocalValue(date){
+      const d = new Date(date);
+      const pad = n => String(n).padStart(2,'0');
+      return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
+    function StudyTracker(){
+      const [tasks, setTasks] = useLocalStorage('mf:tasks', [
+        { id: crypto.randomUUID(), title: 'AP Pre‑Calc worksheet 39‑52', subject: 'Math', due: datetimeLocalValue(Date.now()+36*3600e3), estimate: 90, done: 15 },
+        { id: crypto.randomUUID(), title: 'US History: Homestead Act summary', subject: 'History', due: datetimeLocalValue(Date.now()+4*24*3600e3), estimate: 60, done: 0 },
+        { id: crypto.randomUUID(), title: 'TOEFL reading practice Set 3', subject: 'TOEFL', due: datetimeLocalValue(Date.now()+2*24*3600e3), estimate: 45, done: 20 },
+      ]);
+      const [filter, setFilter] = useLocalStorage('mf:filter','All');
+      const subjects = useMemo(()=>['All', ...Array.from(new Set(tasks.map(t=>t.subject)))], [tasks]);
+
+      const addTask = (e)=>{
+        e.preventDefault();
+        const fd = new FormData(e.currentTarget);
+        const title = (fd.get('title')||'').toString().trim() || 'Untitled';
+        const subject = (fd.get('subject')||'').toString().trim() || 'General';
+        const due = fd.get('due') || datetimeLocalValue(Date.now()+24*3600e3);
+        const estimate = Math.max(5, Number(fd.get('estimate'))||60);
+        const task = { id: crypto.randomUUID(), title, subject, due, estimate, done: 0 };
+        setTasks(ts=>[task, ...ts]);
+        e.currentTarget.reset();
+      };
+
+      const update = (id, patch) => setTasks(ts=>ts.map(t=>t.id===id?{...t, ...patch}:t));
+      const remove = (id) => setTasks(ts=>ts.filter(t=>t.id!==id));
+
+      const visible = tasks
+        .filter(t=> filter==='All' || t.subject===filter)
+        .sort((a,b)=> new Date(a.due) - new Date(b.due));
+
+      const totals = tasks.reduce((acc,t)=>{ acc.est+=t.estimate; acc.done+=Math.min(t.done,t.estimate); return acc; }, {est:0, done:0});
+
+      const markDone = (id)=>{
+        const t = tasks.find(x=>x.id===id); if(!t) return; update(id, { done: t.estimate });
+      };
+
+      return (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.6fr_.9fr]">
+          {/* Left: Task List */}
+          <Card>
+            <form onSubmit={addTask} className="grid grid-cols-1 gap-3 md:grid-cols-6">
+              <input name="title" placeholder="Task title (e.g., Chapter 6 notes)" className="md:col-span-2 rounded-xl border border-white/40 bg-white/70 px-3 py-2 text-sm shadow-soft placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand-400/60 dark:border-white/10 dark:bg-white/5" />
+              <input name="subject" placeholder="Subject (Math, History, TOEFL)" className="rounded-xl border border-white/40 bg-white/70 px-3 py-2 text-sm shadow-soft placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand-400/60 dark:border-white/10 dark:bg-white/5" />
+              <input name="due" type="datetime-local" className="rounded-xl border border-white/40 bg-white/70 px-3 py-2 text-sm shadow-soft focus:outline-none focus:ring-2 focus:ring-brand-400/60 dark:border-white/10 dark:bg-white/5" />
+              <input name="estimate" type="number" min="5" step="5" placeholder="Est. mins" className="rounded-xl border border-white/40 bg-white/70 px-3 py-2 text-sm shadow-soft focus:outline-none focus:ring-2 focus:ring-brand-400/60 dark:border-white/10 dark:bg-white/5" />
+              <Button>Add</Button>
+            </form>
+
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <span className="text-xs text-zinc-500">Filter:</span>
+              <div className="flex flex-wrap gap-2">
+                {subjects.map(s=> (
+                  <Button key={s} variant="ghost" onClick={()=>setFilter(s)} className={cx('px-3 py-1 text-xs', filter===s && 'ring-2 ring-brand-400/60')}>{s}</Button>
+                ))}
+              </div>
+            </div>
+
+            <ul className="mt-4 space-y-3">
+              {visible.map(t=>{
+                const pct = Math.round((Math.min(t.done,t.estimate)/t.estimate)*100);
+                const complete = pct>=100;
+                return (
+                  <li key={t.id} className="rounded-xl border border-white/40 bg-white/60 p-4 shadow-soft backdrop-blur dark:border-white/10 dark:bg-white/5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h4 className={cx('font-semibold leading-tight', complete && 'line-through opacity-70')}>{t.title}</h4>
+                        <div className="mt-1 flex items-center gap-2 text-xs text-zinc-500">
+                          <span className="rounded-full bg-zinc-900/5 px-2 py-0.5 text-[11px] dark:bg-white/10">{t.subject}</span>
+                          <BadgeDeadline due={t.due} />
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        {!complete && <Button variant="ghost" className="text-xs" onClick={()=>markDone(t.id)}>✔ Mark Done</Button>}
+                        <Button variant="danger" className="text-xs" onClick={()=>remove(t.id)}>Delete</Button>
+                      </div>
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span>Progress</span>
+                        <span>{Math.min(t.done,t.estimate)} / {t.estimate} min ({pct}%)</span>
+                      </div>
+                      <Progress value={Math.min(t.done,t.estimate)} max={t.estimate} />
+                      <input type="range" min="0" max={t.estimate} value={t.done} onChange={e=>update(t.id,{done:Number(e.target.value)})} className="w-full accent-brand-500" />
+                    </div>
+                  </li>
+                )
+              })}
+              {visible.length===0 && <p className="text-sm text-zinc-500">No tasks yet. Add one above 👆</p>}
+            </ul>
+          </Card>
+
+          {/* Right: Overview */}
+          <div className="space-y-4">
+            <Card>
+              <h3 className="mb-3 text-sm font-semibold">Study Overview</h3>
+              <div className="space-y-3">
+                <div>
+                  <div className="mb-1 flex items-center justify-between text-xs">
+                    <span>Total Focus</span><span>{totals.done}/{totals.est} min</span>
+                  </div>
+                  <Progress value={totals.done} max={Math.max(1, totals.est)} />
+                </div>
+                <Pomodoro />
+                <TipsCard />
+              </div>
+            </Card>
+
+            <Card>
+              <h3 className="text-sm font-semibold mb-2">Quick Stats</h3>
+              <ul className="grid grid-cols-2 gap-2 text-sm">
+                <li className="rounded-lg bg-white/60 p-3 dark:bg-white/10">📚 Tasks: <span className="font-semibold">{tasks.length}</span></li>
+                <li className="rounded-lg bg-white/60 p-3 dark:bg-white/10">✅ Completed min: <span className="font-semibold">{totals.done}</span></li>
+                <li className="rounded-lg bg-white/60 p-3 dark:bg-white/10">⏳ Remaining min: <span className="font-semibold">{Math.max(0, totals.est - totals.done)}</span></li>
+                <li className="rounded-lg bg-white/60 p-3 dark:bg-white/10">🧠 Subjects: <span className="font-semibold">{subjects.length-1}</span></li>
+              </ul>
+            </Card>
+          </div>
+        </div>
+      );
+    }
+
+    // ===== Pomodoro =====
+    function Pomodoro(){
+      const [running, setRunning] = useState(false);
+      const [len, setLen] = useLocalStorage('mf:pomo:len', 25);
+      const [left, setLeft] = useLocalStorage('mf:pomo:left', len*60);
+      useEffect(()=>{ if(!running) return; const id=setInterval(()=>setLeft(x=>Math.max(0,x-1)),1000); return ()=>clearInterval(id); },[running]);
+      useEffect(()=>{ if(left===0) setRunning(false); },[left]);
+      useEffect(()=>{ setLeft(len*60); },[len]);
+      const m = String(Math.floor(left/60)).padStart(2,'0'); const s=String(left%60).padStart(2,'0');
+      return (
+        <div className="rounded-xl border border-white/40 bg-white/60 p-3 text-center shadow-soft backdrop-blur dark:border-white/10 dark:bg-white/5">
+          <div className="text-xs mb-1">Pomodoro</div>
+          <div className="text-3xl font-semibold tabular-nums">{m}:{s}</div>
+          <div className="mt-2 flex items-center justify-center gap-2">
+            <Button onClick={()=>setRunning(r=>!r)} className="text-xs">{running?'Pause':'Start'}</Button>
+            <Button variant="ghost" onClick={()=>setLeft(len*60)} className="text-xs">Reset</Button>
+            <input type="number" min="5" max="60" value={len} onChange={e=>setLen(Number(e.target.value)||25)} className="w-20 rounded-xl border border-white/40 bg-white/70 px-2 py-1 text-center text-xs shadow-soft focus:outline-none focus:ring-2 focus:ring-brand-400/60 dark:border-white/10 dark:bg-white/5" />
+          </div>
+        </div>
+      );
+    }
+
+    // ===== Tips =====
+    function TipsCard(){
+      const tips = [
+        'Break big tasks into 25‑min chunks.',
+        'Review notes within 24 hours to lock them in.',
+        'Practice active recall instead of rereading.'
+      ];
+      const [i, setI] = useState(0);
+      useEffect(()=>{ const id=setInterval(()=>setI(x=>(x+1)%tips.length), 4000); return ()=>clearInterval(id); },[]);
+      return <div className="rounded-xl border border-white/40 bg-white/60 p-3 text-sm shadow-soft backdrop-blur dark:border-white/10 dark:bg-white/5">💡 {tips[i]}</div>;
+    }
+
+    // ===== Study Materials =====
+    const DEFAULT_DATA = {
+      topics: {
+        TOEFL: {
+          flashcards: [
+            { q: 'Reading tip: What is \"skimming\"?', a: 'Quickly reading to get the main idea (gist).' },
+            { q: 'Speaking Q2 structure?', a: 'State preference → 2 reasons → brief example → conclude.' },
+          ],
+          quiz: [
+            { prompt: 'Which section has integrated tasks?', choices: ['Listening','Speaking','Writing','Reading'], answer: 2 },
+            { prompt: 'Best way to learn vocab?', choices: ['Memorize list once','Use in sentences','Only read','Ignore context'], answer: 1 },
+          ]
+        },
+        SAT: {
+          flashcards: [
+            { q: 'R&W: What does \"inference\" mean?', a: 'A conclusion based on evidence, not directly stated.' },
+            { q: 'Math: Slope‑intercept form?', a: 'y = mx + b' },
+          ],
+          quiz: [
+            { prompt: 'If y = 2x + 3, what is the slope?', choices: ['2','3','-2','1/2'], answer: 0 },
+            { prompt: 'Comma splice fix?', choices: ['Add more commas','Use semicolon','Lowercase next word','Add exclamation'], answer: 1 },
+          ]
+        },
+        History_WWI: {
+          flashcards: [
+            { q: 'Year WWI began?', a: '1914 (after assassination of Archduke Franz Ferdinand).' },
+            { q: 'Name one Central Power', a: 'Germany (also Austria‑Hungary, Ottoman Empire).' },
+          ],
+          quiz: [
+            { prompt: 'U.S. entered WWI in:', choices: ['1914','1917','1918','1920'], answer: 1 },
+            { prompt: 'Which treaty ended WWI?', choices: ['Paris Accords','Versailles','Vienna','Ghent'], answer: 1 },
+          ]
+        }
+      }
+    };
+
+    function TopicManager({ data, setData, topic, setTopic }){
+      const topics = Object.keys(data.topics);
+      const addTopic = ()=>{
+        const name = prompt('New topic name (e.g., Physics_Kinematics)');
+        if(!name) return; if(data.topics[name]) return alert('Topic already exists');
+        const copy = structuredClone(data); copy.topics[name] = { flashcards: [], quiz: [] }; setData(copy); setTopic(name);
+      };
+      const renameTopic = ()=>{
+        const name = prompt('Rename topic to:', topic); if(!name || name===topic) return; if(data.topics[name]) return alert('A topic with that name already exists');
+        const copy = structuredClone(data); copy.topics[name] = copy.topics[topic]; delete copy.topics[topic]; setData(copy); setTopic(name);
+      };
+      const deleteTopic = ()=>{
+        if(Object.keys(data.topics).length<=1) return alert('Keep at least one topic');
+        if(!confirm(`Delete topic "${topic}"?`)) return; const copy = structuredClone(data); delete copy.topics[topic]; const next = Object.keys(copy.topics)[0]; setData(copy); setTopic(next);
+      };
+      const hardReset = ()=>{ if(!confirm('Hard reset will clear saved study materials and reload')) return; localStorage.removeItem('studyData'); location.reload(); };
+      return (
+        <div className="flex flex-wrap items-center gap-2">
+          <select value={topic} onChange={e=>setTopic(e.target.value)} className="rounded-xl border border-white/40 bg-white/70 px-3 py-2 text-sm shadow-soft focus:outline-none focus:ring-2 focus:ring-brand-400/60 dark:border-white/10 dark:bg-white/5">
+            {topics.map(k=> <option key={k} value={k}>{k.replaceAll('_',' ')}</option>)}
+          </select>
+          <Button variant="ghost" onClick={addTopic} className="text-xs">+ Topic</Button>
+          <Button variant="ghost" onClick={renameTopic} className="text-xs">Rename</Button>
+          <Button variant="ghost" onClick={deleteTopic} className="text-xs text-red-500 hover:text-red-400">Delete</Button>
+          <Button variant="ghost" onClick={hardReset} className="text-xs">Hard Reset</Button>
+        </div>
+      );
+    }
+
+    function FlashcardsList({ cards, onDelete }){
+      if(!cards?.length) return <div className="text-zinc-500">No flashcards yet.</div>;
+      return (
+        <ul className="space-y-2 max-h-56 overflow-auto">
+          {cards.map((c,idx)=> (
+            <li key={idx} className="rounded-xl border border-white/40 bg-white/60 p-3 shadow-soft backdrop-blur dark:border-white/10 dark:bg-white/5">
+              <div className="text-[11px] text-zinc-500 mb-1">#{idx+1}</div>
+              <div className="font-medium whitespace-pre-wrap">{c.q}</div>
+              <div className="mt-1 text-zinc-600 whitespace-pre-wrap dark:text-zinc-300">{c.a}</div>
+              <div className="mt-2 text-right"><Button variant="ghost" onClick={()=>onDelete(idx)} className="text-xs">Delete</Button></div>
+            </li>
+          ))}
+        </ul>
+      );
+    }
+
+    function QuizList({ items, onDelete }){
+      if(!items?.length) return <div className="text-zinc-500">No quiz items yet.</div>;
+      return (
+        <ul className="space-y-2 max-h-56 overflow-auto">
+          {items.map((q,idx)=> (
+            <li key={idx} className="rounded-xl border border-white/40 bg-white/60 p-3 shadow-soft backdrop-blur dark:border-white/10 dark:bg-white/5">
+              <div className="text-[11px] text-zinc-500 mb-1">#{idx+1}</div>
+              <div className="font-medium whitespace-pre-wrap">{q.prompt}</div>
+              <div className="mt-1 text-zinc-600 dark:text-zinc-300 text-sm">Choices: {q.choices.join(' | ')} • Answer index: {q.answer}</div>
+              <div className="mt-2 text-right"><Button variant="ghost" onClick={()=>onDelete(idx)} className="text-xs">Delete</Button></div>
+            </li>
+          ))}
+        </ul>
+      );
+    }
+
+    function FlashcardsViewer({ cards }){
+      const [i, setI] = useState(0);
+      const [flipped, setFlipped] = useState(false);
+      const [shuffle, setShuffle] = useState(false);
+      useEffect(()=>{ setFlipped(false); }, [i]);
+      useEffect(()=>{
+        const onKey = (e)=>{
+          if(e.key==='ArrowRight') setI(x=> (x+1) % cards.length);
+          if(e.key==='ArrowLeft') setI(x=> (x-1+cards.length) % cards.length);
+          if(e.key===' '){ e.preventDefault(); setFlipped(f=>!f); }
+        };
+        window.addEventListener('keydown', onKey);
+        return ()=>window.removeEventListener('keydown', onKey);
+      }, [cards?.length]);
+      if(!cards || cards.length===0) return <p className="text-sm text-zinc-500">No flashcards yet. Add some on the right.</p>;
+      const card = cards[i];
+      const next = ()=> setI(x=> (x+1) % cards.length);
+      const prev = ()=> setI(x=> (x-1+cards.length) % cards.length);
+      const shuffleOnce = ()=>{
+        const n = Math.floor(Math.random()*cards.length);
+        setI(n);
+        setFlipped(false);
+      };
+      return (
+        <div className="flex flex-col items-center gap-4">
+          {/* Top bar with progress */}
+          <div className="flex w-full items-center justify-between">
+            <span className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-brand-500/15 to-violet-500/15 px-3 py-1 text-xs font-medium text-zinc-700 dark:text-zinc-200">
+              <span className="h-2 w-2 rounded-full bg-brand-500" /> Card {i+1}/{cards.length}
+            </span>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" className="text-xs" onClick={()=>setShuffle(s=>!s)}>{shuffle? '🔀 Shuffled' : '🔁 Order'}</Button>
+              <Button variant="ghost" className="text-xs" onClick={shuffleOnce}>🎲 Random</Button>
+            </div>
+          </div>
+
+          {/* Flip card */}
+          <div className="relative w-full max-w-3xl select-none" style={{ perspective:'1200px' }}>
+            <div className="relative h-44 w-full rounded-xl2 shadow-glass transition-transform duration-500 [transform-style:preserve-3d]" style={{ transform: flipped ? 'rotateY(180deg)' : 'rotateY(0deg)' }}>
+              {/* front */}
+              <div className="absolute inset-0 glass rounded-xl2 border border-white/40 bg-white/80 p-6 text-center dark:border-white/10 dark:bg-white/10 [backface-visibility:hidden]">
+                <div className="mx-auto max-w-2xl text-lg font-semibold leading-snug">{card.q}</div>
+              </div>
+              {/* back */}
+              <div className="absolute inset-0 glass rounded-xl2 border border-emerald-300/40 bg-emerald-50/80 p-6 text-center text-emerald-900 dark:border-emerald-200/10 dark:bg-emerald-900/20 dark:text-emerald-100 [backface-visibility:hidden] [transform:rotateY(180deg)]">
+                <div className="mx-auto max-w-2xl text-base font-medium whitespace-pre-wrap">{card.a}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Controls */}
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <Button variant="ghost" onClick={prev} className="text-sm">◀️ Prev</Button>
+            <Button onClick={()=>setFlipped(f=>!f)} className="text-sm">{flipped? 'Hide' : 'Reveal'}</Button>
+            <Button variant="ghost" onClick={next} className="text-sm">Next ▶️</Button>
+          </div>
+
+          {/* Progress dots */}
+          <div className="flex max-w-full flex-wrap items-center justify-center gap-1.5">
+            {cards.map((_, idx)=> (
+              <span key={idx} className={cx('h-2.5 w-2.5 rounded-full transition', idx===i ? 'bg-brand-500 scale-110' : 'bg-zinc-300 dark:bg-zinc-700')} />
+            ))}
+          </div>
+
+          {/* Shortcuts */}
+          <div className="text-[11px] text-zinc-500">
+           
+          </div>
+        </div>
+      );
+    }
+
+    function QuizRunner({ items }){
+      const [i, setI] = useState(0);
+      const [score, setScore] = useState(0);
+      const [picked, setPicked] = useState(null);
+      if(!items?.length) return <p className="text-sm text-zinc-500">No quiz items yet. Add some on the right.</p>;
+
+      const total = items.length;
+      const q = items[Math.min(i, total-1)];
+      const pct = Math.round((i/total)*100);
+
+      const submit = (choice) => {
+        if(picked!==null) return;
+        setPicked(choice);
+        if(choice===q.answer) setScore(s=>s+1);
+      };
+      const next = () => { setPicked(null); setI(x=>x+1); };
+
+      const done = i>=total;
+      if(done){
+        const percent = Math.round((score/total)*100);
+        const emoji = percent===100 ? '🏆' : percent>=80 ? '🎉' : percent>=60 ? '👍' : '🧠';
+        return (
+          <Card className="text-center">
+            <div className="text-3xl mb-2">{emoji}</div>
+            <div className="text-2xl font-semibold">Score: {score}/{total} ({percent}%)</div>
+            <p className="mt-2 text-zinc-500 text-sm">Great work—want to try again or switch modes?</p>
+            <div className="mt-4 flex items-center justify-center gap-2">
+              <Button onClick={()=>{setI(0); setScore(0); setPicked(null);}} className="text-sm">Restart Quiz</Button>
+              <Button variant="ghost" onClick={()=>window.scrollTo({top:0, behavior:'smooth'})} className="text-sm">Back to top</Button>
+            </div>
+          </Card>
+        );
+      }
+
+      return (
+        <div className="space-y-4">
+          {/* Header with progress pill */}
+          <div className="flex items-center justify-between">
+            <div className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-brand-500/15 to-violet-500/15 px-3 py-1 text-xs font-medium text-zinc-700 dark:text-zinc-200">
+              <span className="h-2 w-2 rounded-full bg-violet-500"/>
+              Question {i+1}/{total}
+            </div>
+            <div className="w-40">
+              <div className="h-2 w-full rounded-full bg-zinc-200/70 dark:bg-zinc-800">
+                <div className="h-2 rounded-full bg-gradient-to-r from-brand-500 to-violet-500" style={{width: pct+'%'}}/>
+              </div>
+            </div>
+          </div>
+
+          {/* Question card */}
+          <Card>
+            <div className="text-sm text-zinc-500">Read carefully</div>
+            <div className="mt-1 text-lg font-semibold whitespace-pre-wrap">{q.prompt}</div>
+          </Card>
+
+          {/* Choices */}
+          <ul className="space-y-3">
+            {q.choices.map((c, idx)=>{
+              const isPicked = picked===idx;
+              const isCorrect = picked!==null && idx===q.answer;
+              const isWrong = picked!==null && isPicked && !isCorrect;
+              return (
+                <li key={idx}>
+                  <div className={cx('rounded-xl p-[2px] transition',
+                      isCorrect ? 'bg-gradient-to-r from-emerald-400 to-green-500' :
+                      isWrong ? 'bg-gradient-to-r from-rose-400 to-red-500' :
+                      'bg-gradient-to-r from-white/0 to-white/0 dark:from-white/0 dark:to-white/0')}
+                  >
+                    <button
+                      onClick={()=>submit(idx)}
+                      disabled={picked!==null}
+                      className={cx(
+                        'w-full rounded-[0.7rem] border border-white/40 bg-white/70 p-3 text-left shadow-soft backdrop-blur transition',
+                        'hover:brightness-[1.02] active:scale-[.99] disabled:opacity-90 dark:border-white/10 dark:bg-white/5',
+                        isPicked && 'ring-2 ring-brand-400/60',
+                        isCorrect && 'bg-emerald-50/80 dark:bg-emerald-900/20',
+                        isWrong && 'bg-rose-50/80 dark:bg-rose-900/20'
+                      )}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span>{c}</span>
+                        {picked!==null && (
+                          <span className="text-xs font-semibold">
+                            {isCorrect ? '✔ Correct' : isWrong ? '✖ Wrong' : ''}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+
+          {/* Next button + hint */}
+          <div className="flex items-center justify-between">
+            <div className="text-xs text-zinc-500">Tip: You can review missed ones after finishing.</div>
+            {picked!==null && <Button onClick={next}>Next</Button>}
+          </div>
+        </div>
+      );
+    }
+
+    function StudyMaterials(){
+      const [data, setData] = useLocalStorage('studyData', DEFAULT_DATA);
+      const topicKeys = Object.keys(data.topics);
+      const [topic, setTopic] = useState(topicKeys[0] || 'New_Topic');
+      useEffect(()=>{ const keys = Object.keys(data.topics); if(keys.length && !keys.includes(topic)) setTopic(keys[0]); }, [data]);
+      const [mode, setMode] = useState('flashcards');
+
+      const cards = data.topics?.[topic]?.flashcards ?? [];
+      const quizzes = data.topics?.[topic]?.quiz ?? [];
+      const [fc, setFC] = useState({ q:'', a:'' });
+      const [qz, setQZ] = useState({ prompt:'', choices:'', answer:0 });
+
+      const addFlashcard = ()=>{
+        if(!fc.q.trim() || !fc.a.trim()) return; const copy = structuredClone(data); copy.topics[topic].flashcards.push({ q: fc.q.trim(), a: fc.a.trim() }); setData(copy); setFC({ q:'', a:'' });
+      };
+      const delFlashcard = (idx)=>{ const copy = structuredClone(data); copy.topics[topic].flashcards.splice(idx,1); setData(copy); };
+      const addQuiz = ()=>{
+        const choices = qz.choices.split('|').map(s=>s.trim()).filter(Boolean);
+        if(!qz.prompt.trim() || choices.length<2) return; const copy = structuredClone(data); copy.topics[topic].quiz.push({ prompt: qz.prompt.trim(), choices, answer: Number(qz.answer)||0 }); setData(copy); setQZ({ prompt:'', choices:'', answer:0 });
+      };
+      const delQuiz = (idx)=>{ const copy = structuredClone(data); copy.topics[topic].quiz.splice(idx,1); setData(copy); };
+      const exportJSON = ()=>{ const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'study-data.json'; a.click(); URL.revokeObjectURL(url); };
+
+      return (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.6fr_.9fr]">
+          <Card>
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <TopicManager data={data} setData={setData} topic={topic} setTopic={setTopic} />
+              <div className="ml-auto flex gap-2">
+                <Button variant="ghost" onClick={()=>setMode('flashcards')} className={cx(mode==='flashcards' && 'ring-2 ring-brand-400/60')}>Flashcards</Button>
+                <Button variant="ghost" onClick={()=>setMode('quiz')} className={cx(mode==='quiz' && 'ring-2 ring-brand-400/60')}>Quiz</Button>
+              </div>
+            </div>
+            {mode==='flashcards' ? <FlashcardsViewer cards={cards} /> : <QuizRunner items={quizzes} />}
+          </Card>
+
+          <Card>
+            {mode==='flashcards' ? (
+              <div className="space-y-3">
+                <div className="text-sm font-semibold">Add Flashcard</div>
+                <input value={fc.q} onChange={e=>setFC({...fc, q:e.target.value})} placeholder="Question" className="w-full rounded-xl border border-white/40 bg-white/70 px-3 py-2 text-sm shadow-soft focus:outline-none focus:ring-2 focus:ring-brand-400/60 dark:border-white/10 dark:bg-white/5" />
+                <textarea value={fc.a} onChange={e=>setFC({...fc, a:e.target.value})} placeholder="Answer" className="w-full rounded-xl border border-white/40 bg-white/70 px-3 py-2 text-sm shadow-soft focus:outline-none focus:ring-2 focus:ring-brand-400/60 dark:border-white/10 dark:bg-white/5" />
+                <Button onClick={addFlashcard} className="w-full">Add Flashcard</Button>
+                <div className="pt-2 border-t border-white/40 dark:border-white/10"></div>
+                <div className="text-sm font-semibold">Flashcards ({cards.length})</div>
+                <FlashcardsList cards={cards} onDelete={delFlashcard} />
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="text-sm font-semibold">Add Quiz Item</div>
+                <input value={qz.prompt} onChange={e=>setQZ({...qz, prompt:e.target.value})} placeholder="Quiz prompt" className="w-full rounded-xl border border-white/40 bg-white/70 px-3 py-2 text-sm shadow-soft focus:outline-none focus:ring-2 focus:ring-brand-400/60 dark:border-white/10 dark:bg-white/5" />
+                <input value={qz.choices} onChange={e=>setQZ({...qz, choices:e.target.value})} placeholder="Choices (separate with | )" className="w-full rounded-xl border border-white/40 bg-white/70 px-3 py-2 text-sm shadow-soft focus:outline-none focus:ring-2 focus:ring-brand-400/60 dark:border-white/10 dark:bg-white/5" />
+                <input type="number" value={qz.answer} onChange={e=>setQZ({...qz, answer:e.target.value})} placeholder="Correct index (0‑based)" className="w-full rounded-xl border border-white/40 bg-white/70 px-3 py-2 text-sm shadow-soft focus:outline-none focus:ring-2 focus:ring-brand-400/60 dark:border-white/10 dark:bg-white/5" />
+                <Button onClick={addQuiz} className="w-full">Add Quiz Item</Button>
+                <div className="pt-2 border-t border-white/40 dark:border-white/10"></div>
+                <div className="text-sm font-semibold">Quiz Items ({quizzes.length})</div>
+                <QuizList items={quizzes} onDelete={delQuiz} />
+                <div className="pt-2 border-t border-white/40 dark:border-white/10"></div>
+                <Button variant="ghost" onClick={exportJSON} className="w-full text-sm">Export All Data</Button>
+              </div>
+            )}
+          </Card>
+        </div>
+      );
+    }
+
+    // ===== App Shell (new navbar style) =====
+    function App(){
+      const [tab, setTab] = useLocalStorage('mf:tab','tracker');
+      return (
+        <div className="min-h-screen">
+          <div className="mx-auto max-w-7xl px-4 py-8">
+            <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-brand-500 to-violet-500 text-white shadow-soft">🧠</div>
+                <div>
+                  <h1 className="text-2xl font-extrabold tracking-tight"><span className="bg-gradient-to-r from-brand-600 to-violet-500 bg-clip-text text-transparent">MindFlow</span></h1>
+                  <p className="text-xs text-zinc-500">Smart Study Dashboard</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <nav className="rounded-2xl border border-white/40 bg-white/60 p-1 shadow-soft backdrop-blur dark:border-white/10 dark:bg-white/5">
+                  <button onClick={()=>setTab('tracker')} className={cx('rounded-xl px-4 py-2 text-sm transition', tab==='tracker' ? 'bg-brand-500 text-white shadow-soft' : 'hover:bg-white/70 dark:hover:bg-white/10')}>📋 Tracker</button>
+                  <button onClick={()=>setTab('materials')} className={cx('rounded-xl px-4 py-2 text-sm transition', tab==='materials' ? 'bg-violet-500 text-white shadow-soft' : 'hover:bg-white/70 dark:hover:bg-white/10')}>🤖 Study Materials</button>
+                </nav>
+                <DarkModeToggle />
+              </div>
+            </header>
+
+            {tab==='tracker' ? <StudyTracker /> : <StudyMaterials />}
+
+            <footer className="mt-12 text-center text-xs text-zinc-500">Harry</footer>
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
